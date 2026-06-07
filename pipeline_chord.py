@@ -88,6 +88,7 @@ class ChordEditPipeline(DiffusionPipeline):
         use_center_crop: bool = True,
         use_safety_checker: bool = False,
         safety_checker_id: Optional[str] = DEFAULT_SAFETY_CHECKER_ID,
+        chord_edit_mode: str = "default",
     ) -> None:
         super().__init__()
         self.register_modules(
@@ -124,6 +125,7 @@ class ChordEditPipeline(DiffusionPipeline):
         self._safety_feature_extractor: Optional[CLIPImageProcessor] = None
         if self._use_safety_checker:
             self._init_safety_checker()
+        self._chord_edit_mode = chord_edit_mode
 
     def _set_compute_precision(self) -> None:
         modules = (self.unet, self.vae, self.text_encoder, self.text_encoder_2)
@@ -165,6 +167,7 @@ class ChordEditPipeline(DiffusionPipeline):
         use_attention_mask: bool = False,
         use_safety_checker: bool = False,
         safety_checker_id: Optional[str] = DEFAULT_SAFETY_CHECKER_ID,
+        chord_edit_mode: str = "default",
     ) -> "ChordEditPipeline":
         """Instantiate SD or SDXL weights, inferring the format when possible.
 
@@ -705,8 +708,13 @@ class ChordEditPipeline(DiffusionPipeline):
         )
         x0_pred = (z_t - sigma_t * noise_pred) / alpha_t
         return x0_pred
-
+    
     def _u_estimate(self, x_anchor, src_embed, edit_embed, noise, t_s: float, delta: float):
+        if self._chord_edit_mode == "sym":
+            return self._u_estimate_sym(x_anchor, src_embed, edit_embed, noise, t_s, delta)
+        return self._u_estimate_default(x_anchor, src_embed, edit_embed, noise, t_s, delta)
+
+    def _u_estimate_default(self, x_anchor, src_embed, edit_embed, noise, t_s: float, delta: float):
         batch, device = x_anchor.shape[0], x_anchor.device
         t_idx_s = self._time_to_index(batch, t_s, device=device)
         t_idx_s0 = self._time_to_index(batch, max(0.0, t_s - delta), device=device)
@@ -839,8 +847,14 @@ class ChordEditPipeline(DiffusionPipeline):
                 device=device,
             ).tolist()
 
+        print(
+            "t_start: ", params["t_start"], 
+            "t_end: ", params["t_end"], 
+            "t_delta: ", params["t_delta"], 
+            "n_steps: ", params["n_steps"]
+        )
+
         x_curr = x_src
-        print(params["t_start"], params["t_end"], params["t_delta"], params["n_steps"])
         for t_s in t_grid:
             u_hat = self._u_estimate(
                 x_curr,

@@ -121,6 +121,12 @@ def parse_args() -> argparse.Namespace:
         help="Disable safety checker (default).",
     )
     parser.add_argument(
+        "--chord-edit-mode",
+        choices=["sym", "default"],
+        default="default",
+        help="Chord edit mode. default uses the default edit mode, sym uses a symmetric edit.",
+    )
+    parser.add_argument(
         "--image-size",
         type=int,
         default=None,
@@ -412,9 +418,11 @@ def main() -> None:
         compute_dtype=compute_dtype,
         use_attention_mask=args.use_attention_mask,
         use_safety_checker=args.use_safety_checker,
+        chord_edit_mode=args.chord_edit_mode,
     )
 
-    output_dir = export_root / "output" / args.method_name / args.output_subdir
+    dir_name = "chord_" + args.chord_edit_mode + "_" + args.model_type
+    output_dir = export_root / "output" / args.method_name / args.output_subdir / dir_name
     source_dir = export_root / "data" / args.source_subdir
     ensure_dir(output_dir)
     if args.copy_source:

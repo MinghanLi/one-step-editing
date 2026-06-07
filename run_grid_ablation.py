@@ -30,7 +30,8 @@ if TYPE_CHECKING:
 
 
 LOGGER = logging.getLogger("grid_ablation")
-GRID_VALUES = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5]
+GRID_VALUES_SYM = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5]
+GRID_VALUES = [0.0, 0.3, 0.6, 0.9, 1.0]
 
 
 def parse_args() -> argparse.Namespace:
@@ -95,6 +96,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         default=DEFAULT_USE_SAFETY_CHECKER,
         help="Enable StableDiffusion safety checker.",
+    )
+    parser.add_argument(
+        "--chord-edit-mode",
+        choices=["sym", "default"],
+        default="default",
+        help="Chord edit mode. default uses the default edit mode, sym uses a symmetric edit.",
     )
     parser.add_argument("--cell-size", type=int, default=192, help="Pixel size of each image in the grid.")
     return parser.parse_args()
@@ -202,6 +209,7 @@ def main() -> None:
         compute_dtype=torch.float32,
         use_attention_mask=args.use_attention_mask,
         use_safety_checker=args.safety_checker,
+        chord_edit_mode=args.chord_edit_mode,
     )
 
     manifest: Dict[str, Any] = {

@@ -44,6 +44,16 @@ DEFAULT_EDIT_CONFIG = {
     "cleanup": True,
 }
 
+DEFAULT_EDIT_CONFIG_SYM = {
+    "noise_samples": 1,
+    "n_steps": 1,
+    "t_start": 0.40,
+    "t_end": 0.20,
+    "t_delta": 0.15,
+    "step_scale": 1.0,
+    "cleanup": True,
+}
+
 DEFAULT_SEED = 42
 DEFAULT_PRECISION = "fp32"
 
@@ -241,6 +251,8 @@ def pipeline_model_type(model_type: str) -> Optional[str]:
 
 def load_pipeline_config(path: Optional[str]) -> tuple[Dict[str, Any], int, Optional[str]]:
     if path is None:
+        if args.chord_edit_mode == "sym":
+            return (dict(DEFAULT_EDIT_CONFIG_SYM), DEFAULT_SEED, DEFAULT_PRECISION)
         return (dict(DEFAULT_EDIT_CONFIG), DEFAULT_SEED, DEFAULT_PRECISION)
 
     cfg = load_yaml_config(path)
@@ -256,7 +268,9 @@ def load_pipeline_config(path: Optional[str]) -> tuple[Dict[str, Any], int, Opti
     precision = editor_cfg.get("precision", DEFAULT_PRECISION)
 
     params_grid = editor_cfg.get("params_grid", {})
-    edit_config = first_param_point(params_grid) if params_grid else dict(DEFAULT_EDIT_CONFIG)
+    edit_config = first_param_point(params_grid) if params_grid else dict(
+        DEFAULT_EDIT_CONFIG_SYM if args.chord_edit_mode == "sym" else DEFAULT_EDIT_CONFIG
+    )
 
     return edit_config, seed_value, precision
 

@@ -373,7 +373,8 @@ class ChordEditPipeline(DiffusionPipeline):
         params["noise_samples"] = int(max(1, params["noise_samples"]))
         params["n_steps"] = int(max(1, params["n_steps"]))
         params["t_start"] = float(max(0.0, min(1.0, params["t_start"])))
-        params["t_end"] = float(max(0.0, min(params["t_start"], params["t_end"])))
+        # params["t_end"] = float(max(0.0, min(params["t_start"], params["t_end"])))
+        params["t_end"] = float(max(0.0, params["t_end"]))
         t_delta = float(max(0.0, min(1.0, params["t_delta"])))
         if t_delta >= params["t_start"]:
             safe_max = max(1, self._max_unet_timestep)
@@ -485,6 +486,64 @@ class ChordEditPipeline(DiffusionPipeline):
             return dv_s
         return (delta * dv_s + t_s * dv_s0) / denom
 
+    def _u_estimate_sym(self, x_anchor, src_embed, edit_embed, noise, t_s: float, delta: float):
+        batch, device = x_anchor.shape[0], x_anchor.device
+        t_idx_s = self._time_to_index(batch, t_s, device=device)
+        t_idx_s0 = self._time_to_index(batch, max(0.0, 1 - t_s), device=device)
+
+        noises = noise if isinstance(noise, (list, tuple)) else [noise]
+
+        alpha_s, sigma_s = self._get_alpha_sigma(x_anchor, t_idx_s)
+        alpha_prev, sigma_prev = self._get_alpha_sigma(x_anchor, t_idx_s0)
+
+        num_noises = len(noises)
+        noise_stack = torch.stack(noises, dim=0)
+
+        x_anchor_b = x_anchor.unsqueeze(0).expand(num_noises, -1, -1, -1, -1)
+        alpha_s_b = alpha_s.unsqueeze(0).expand(num_noises, -1, -1, -1, -1)
+        alpha_prev_b = alpha_prev.unsqueeze(0).expand(num_noises, -1, -1, -1, -1)
+        sigma_s_b = sigma_s.unsqueeze(0).expand(num_noises, -1, -1, -1, -1)
+        sigma_prev_b = sigma_prev.unsqueeze(0).expand(num_noises, -1, -1, -1, -1)
+
+        z_s = alpha_s_b * x_anchor_b + sigma_s_b * noise_stack
+        z_prev = alpha_prev_b * x_anchor_b + sigma_prev_b * noise_stack
+
+        samples = torch.stack([z_s, z_s, z_prev, z_prev], dim=1)
+        samples = samples.reshape(num_noises * 4 * batch, *x_anchor.shape[1:])
+
+        conds = torch.cat([src_embed, edit_embed, src_embed, edit_embed], dim=0)
+        repeat_dims = [num_noises] + [1] * (conds.dim() - 1)
+        conds = conds.repeat(*repeat_dims)
+
+        timesteps = torch.cat([t_idx_s, t_idx_s, t_idx_s0, t_idx_s0], dim=0)
+        timesteps = timesteps.repeat(num_noises)
+
+        alpha_cat = torch.stack(
+            [alpha_s_b, alpha_s_b, alpha_prev_b, alpha_prev_b],
+            dim=1,
+        ).reshape(num_noises * 4 * batch, 1, 1, 1)
+        sigma_cat = torch.stack(
+            [sigma_s_b, sigma_s_b, sigma_prev_b, sigma_prev_b],
+            dim=1,
+        ).reshape(num_noises * 4 * batch, 1, 1, 1)
+
+        noise_pred = self.unet(
+            sample=samples,
+            timestep=timesteps,
+            encoder_hidden_states=conds,
+            return_dict=False,
+        )[0]
+
+        x0_all = (samples - sigma_cat * noise_pred) / alpha_cat
+        x0_all = x0_all.reshape(num_noises, 4, batch, *x_anchor.shape[1:])
+        x_src_p_s, x_tar_p_s, x_src_p_s0, x_tar_p_s0 = x0_all.unbind(dim=1)
+
+        dv_s = (x_tar_p_s - x_src_p_s).sum(dim=0) / float(num_noises)
+        dv_s0 = (x_tar_p_s0 - x_src_p_s0).sum(dim=0) / float(num_noises)
+
+        return t_s * dv_s + (1 - t_s) * dv_s0
+
+
     def _run_edit(
         self,
         x_src: torch.Tensor,
@@ -505,8 +564,9 @@ class ChordEditPipeline(DiffusionPipeline):
             ).tolist()
 
         x_curr = x_src
+        print(params["t_start"], params["t_end"], params["t_delta"], params["n_steps"])
         for t_s in t_grid:
-            u_hat = self._u_estimate(
+            u_hat = self._u_estimate_sym(
                 x_curr,
                 src_embed,
                 edit_embed,

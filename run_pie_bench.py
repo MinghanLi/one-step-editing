@@ -406,7 +406,7 @@ def main() -> None:
         mapping_path,
     )
     LOGGER.info("Seed %s | Edit config %s", seed, edit_config)
-
+    
     pipeline = ChordEditPipeline.from_local_weights(
         component_paths=component_paths,
         model_type=pipeline_model_type(args.model_type),

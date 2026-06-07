@@ -186,6 +186,7 @@ class ChordEditPipeline(DiffusionPipeline):
             "use_attention_mask": use_attention_mask,
             "use_safety_checker": use_safety_checker,
             "safety_checker_id": safety_checker_id,
+            "chord_edit_mode": chord_edit_mode,
         }
         if resolved_model_type == "sdxl":
             return cls.from_local_sdxl_weights(
@@ -229,6 +230,7 @@ class ChordEditPipeline(DiffusionPipeline):
         use_attention_mask: bool = False,
         use_safety_checker: bool = False,
         safety_checker_id: Optional[str] = DEFAULT_SAFETY_CHECKER_ID,
+        chord_edit_mode: str = "default",
     ) -> "ChordEditPipeline":
         """Instantiate the pipeline from local SD/SD-Turbo component checkpoints."""
 
@@ -257,6 +259,7 @@ class ChordEditPipeline(DiffusionPipeline):
             use_center_crop=use_center_crop,
             use_safety_checker=use_safety_checker,
             safety_checker_id=safety_checker_id,
+            chord_edit_mode=chord_edit_mode,
         )
 
     @classmethod
@@ -273,6 +276,7 @@ class ChordEditPipeline(DiffusionPipeline):
         use_attention_mask: bool = False,
         use_safety_checker: bool = False,
         safety_checker_id: Optional[str] = DEFAULT_SAFETY_CHECKER_ID,
+        chord_edit_mode: str = "default",
     ) -> "ChordEditPipeline":
         """Instantiate the pipeline from local SDXL-Turbo component checkpoints.
 
@@ -326,6 +330,7 @@ class ChordEditPipeline(DiffusionPipeline):
             use_center_crop=use_center_crop,
             use_safety_checker=use_safety_checker,
             safety_checker_id=safety_checker_id,
+            chord_edit_mode=chord_edit_mode,
         )
 
     @classmethod
@@ -711,6 +716,7 @@ class ChordEditPipeline(DiffusionPipeline):
     
     def _u_estimate(self, x_anchor, src_embed, edit_embed, noise, t_s: float, delta: float):
         if self._chord_edit_mode == "sym":
+            print("Using symmetric edit mode ...")
             return self._u_estimate_sym(x_anchor, src_embed, edit_embed, noise, t_s, delta)
         return self._u_estimate_default(x_anchor, src_embed, edit_embed, noise, t_s, delta)
 

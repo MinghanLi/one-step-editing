@@ -41,7 +41,13 @@ def parse_args() -> argparse.Namespace:
         "--model-root",
         type=str,
         default=DEFAULT_MODEL_ROOT,
-        help="Root folder containing unet/scheduler/text_encoder/tokenizer/vae subfolders.",
+        help="Root folder containing SD or SDXL component subfolders.",
+    )
+    parser.add_argument(
+        "--model-type",
+        choices=["auto", "sd", "sdxl"],
+        default="auto",
+        help="Model family. auto selects SDXL when tokenizer_2/text_encoder_2 folders are present.",
     )
     parser.add_argument(
         "--data-root",
@@ -52,7 +58,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-root",
         type=str,
-        default="ablation_outputs/grid_t_start_t_end_sym_sdxl_turbo",
+        default="ablation_outputs/grid_t_start_t_end_sdxl_turbo",
         help="Where to save 5x5 ablation grids and cell images.",
     )
     parser.add_argument("--device", type=str, default=None, help="Torch device override, e.g. cuda:0 or cpu.")
@@ -63,7 +69,12 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_PRECISION,
         help="Model loading precision.",
     )
-    parser.add_argument("--image-size", type=int, default=DEFAULT_IMAGE_SIZE)
+    parser.add_argument(
+        "--image-size",
+        type=int,
+        default=None,
+        help=f"VAE input resolution. Defaults to {DEFAULT_IMAGE_SIZE} for SD and 1024 for SDXL.",
+    )
     parser.add_argument("--max-records", type=int, default=None, help="Only process the first N prompt records.")
     parser.add_argument("--overwrite", action="store_true", help="Overwrite existing generated images.")
     parser.add_argument(
@@ -167,7 +178,7 @@ def main() -> None:
 
     data_root = Path(args.data_root).expanduser().resolve()
     output_root = Path(args.output_root).expanduser().resolve()
-    component_paths = resolve_component_paths(args.model_root)
+    component_paths = resolve_component_paths(args.model_root, args.model_type)
     base_config = dict(DEFAULT_EDIT_CONFIG)
     records = load_local_records(data_root, args.max_records)
     values = list(GRID_VALUES)
@@ -182,6 +193,7 @@ def main() -> None:
     torch_dtype = dtype_from_precision(args.precision)
     pipeline = ChordEditPipeline.from_local_weights(
         component_paths=component_paths,
+        model_type=None if args.model_type == "auto" else args.model_type,
         default_edit_config=base_config,
         device=args.device,
         torch_dtype=torch_dtype,

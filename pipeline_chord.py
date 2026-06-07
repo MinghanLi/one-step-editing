@@ -13,7 +13,7 @@ from diffusers.pipelines.stable_diffusion.safety_checker import StableDiffusionS
 from diffusers.utils import BaseOutput
 from torchvision import transforms
 from torchvision.transforms import InterpolationMode
-from transformers import AutoTokenizer, CLIPImageProcessor, CLIPTextModel
+from transformers import AutoTokenizer, CLIPImageProcessor, CLIPTextModel, CLIPTextModelWithProjection
 
 DEFAULT_SEED = 42
 DEFAULT_COMPUTE_DTYPE = torch.float32
@@ -31,6 +31,13 @@ LOGGER = logging.getLogger(__name__)
 class ChordEditPipelineOutput(BaseOutput):
     images: List[Image.Image] | torch.Tensor
     latents: torch.Tensor
+
+
+@dataclass
+class _PromptCondition:
+    hidden_states: torch.Tensor
+    pooled_embeds: Optional[torch.Tensor] = None
+    time_ids: Optional[torch.Tensor] = None
 
 
 class _CenterSquareCropTransform:
@@ -71,6 +78,8 @@ class ChordEditPipeline(DiffusionPipeline):
         vae: AutoencoderKL,
         tokenizer,
         text_encoder: CLIPTextModel,
+        tokenizer_2=None,
+        text_encoder_2: Optional[CLIPTextModelWithProjection] = None,
         default_edit_config: Optional[Dict[str, Any]] = None,
         image_size: int = 512,
         device: Optional[str | torch.device] = None,
@@ -87,12 +96,15 @@ class ChordEditPipeline(DiffusionPipeline):
             vae=vae,
             tokenizer=tokenizer,
             text_encoder=text_encoder,
+            tokenizer_2=tokenizer_2,
+            text_encoder_2=text_encoder_2,
         )
         self._device = torch.device(
             device if device is not None else ("cuda" if torch.cuda.is_available() else "cpu")
         )
         self._compute_dtype = compute_dtype
         self._use_attention_mask = bool(use_attention_mask)
+        self._is_sdxl = tokenizer_2 is not None and text_encoder_2 is not None
         self.to(self._device)
         self._set_compute_precision()
 
@@ -103,6 +115,8 @@ class ChordEditPipeline(DiffusionPipeline):
         self.unet.eval()
         self.vae.eval()
         self.text_encoder.eval()
+        if self.text_encoder_2 is not None:
+            self.text_encoder_2.eval()
         self._max_unet_timestep = self.scheduler.config.num_train_timesteps - 1
         self._use_safety_checker = bool(use_safety_checker)
         self._safety_checker_id = safety_checker_id
@@ -112,7 +126,7 @@ class ChordEditPipeline(DiffusionPipeline):
             self._init_safety_checker()
 
     def _set_compute_precision(self) -> None:
-        modules = (self.unet, self.vae, self.text_encoder)
+        modules = (self.unet, self.vae, self.text_encoder, self.text_encoder_2)
         for module in modules:
             if module is not None:
                 module.to(device=self._device, dtype=self._compute_dtype)
@@ -141,6 +155,68 @@ class ChordEditPipeline(DiffusionPipeline):
         cls,
         component_paths: Dict[str, str],
         *,
+        model_type: Optional[str] = None,
+        default_edit_config: Optional[Dict[str, Any]] = None,
+        device: Optional[str | torch.device] = None,
+        torch_dtype: torch.dtype = torch.float32,
+        image_size: Optional[int] = None,
+        use_center_crop: bool = True,
+        compute_dtype: torch.dtype = DEFAULT_COMPUTE_DTYPE,
+        use_attention_mask: bool = False,
+        use_safety_checker: bool = False,
+        safety_checker_id: Optional[str] = DEFAULT_SAFETY_CHECKER_ID,
+    ) -> "ChordEditPipeline":
+        """Instantiate SD or SDXL weights, inferring the format when possible.
+
+        Set model_type to "sd" or "sdxl" to force a specific constructor.
+        When omitted, SDXL is selected if tokenizer_2_path and text_encoder_2_path
+        are present; otherwise the original SD constructor is used.
+        """
+
+        resolved_model_type = cls._resolve_local_model_type(component_paths, model_type)
+        common_kwargs = {
+            "default_edit_config": default_edit_config,
+            "device": device,
+            "torch_dtype": torch_dtype,
+            "use_center_crop": use_center_crop,
+            "compute_dtype": compute_dtype,
+            "use_attention_mask": use_attention_mask,
+            "use_safety_checker": use_safety_checker,
+            "safety_checker_id": safety_checker_id,
+        }
+        if resolved_model_type == "sdxl":
+            return cls.from_local_sdxl_weights(
+                component_paths=component_paths,
+                image_size=1024 if image_size is None else image_size,
+                **common_kwargs,
+            )
+        if resolved_model_type == "sd":
+            return cls.from_local_sd_weights(
+                component_paths=component_paths,
+                image_size=512 if image_size is None else image_size,
+                **common_kwargs,
+            )
+        raise ValueError(f"Unsupported local model type: {resolved_model_type}")
+
+    @staticmethod
+    def _resolve_local_model_type(component_paths: Dict[str, str], model_type: Optional[str]) -> str:
+        if model_type is None:
+            if "tokenizer_2_path" in component_paths or "text_encoder_2_path" in component_paths:
+                return "sdxl"
+            return "sd"
+
+        normalized = model_type.lower().replace("_", "-")
+        if normalized in {"sd", "sd-turbo", "stable-diffusion", "stable-diffusion-turbo"}:
+            return "sd"
+        if normalized in {"sdxl", "sdxl-turbo", "stable-diffusion-xl", "stable-diffusion-xl-turbo"}:
+            return "sdxl"
+        raise ValueError("model_type must be one of: sd, sd-turbo, sdxl, sdxl-turbo.")
+
+    @classmethod
+    def from_local_sd_weights(
+        cls,
+        component_paths: Dict[str, str],
+        *,
         default_edit_config: Optional[Dict[str, Any]] = None,
         device: Optional[str | torch.device] = None,
         torch_dtype: torch.dtype = torch.float32,
@@ -151,7 +227,7 @@ class ChordEditPipeline(DiffusionPipeline):
         use_safety_checker: bool = False,
         safety_checker_id: Optional[str] = DEFAULT_SAFETY_CHECKER_ID,
     ) -> "ChordEditPipeline":
-        """Instantiate the pipeline from individual component checkpoints."""
+        """Instantiate the pipeline from local SD/SD-Turbo component checkpoints."""
 
         unet = UNet2DConditionModel.from_pretrained(
             component_paths["unet_path"],
@@ -179,6 +255,85 @@ class ChordEditPipeline(DiffusionPipeline):
             use_safety_checker=use_safety_checker,
             safety_checker_id=safety_checker_id,
         )
+
+    @classmethod
+    def from_local_sdxl_weights(
+        cls,
+        component_paths: Dict[str, str],
+        *,
+        default_edit_config: Optional[Dict[str, Any]] = None,
+        device: Optional[str | torch.device] = None,
+        torch_dtype: torch.dtype = torch.float32,
+        image_size: int = 1024,
+        use_center_crop: bool = True,
+        compute_dtype: torch.dtype = DEFAULT_COMPUTE_DTYPE,
+        use_attention_mask: bool = False,
+        use_safety_checker: bool = False,
+        safety_checker_id: Optional[str] = DEFAULT_SAFETY_CHECKER_ID,
+    ) -> "ChordEditPipeline":
+        """Instantiate the pipeline from local SDXL-Turbo component checkpoints.
+
+        Expected keys mirror the SDXL repository layout:
+        unet_path, scheduler_path, vae_path, tokenizer_path, tokenizer_2_path,
+        text_encoder_path, and text_encoder_2_path.
+        """
+
+        required = [
+            "unet_path",
+            "scheduler_path",
+            "vae_path",
+            "tokenizer_path",
+            "tokenizer_2_path",
+            "text_encoder_path",
+            "text_encoder_2_path",
+        ]
+        missing = [key for key in required if key not in component_paths]
+        if missing:
+            raise ValueError(f"Missing SDXL component paths: {missing}")
+
+        unet = UNet2DConditionModel.from_pretrained(
+            component_paths["unet_path"],
+            torch_dtype=torch_dtype,
+        )
+        scheduler = DDPMScheduler.from_pretrained(component_paths["scheduler_path"])
+        vae = AutoencoderKL.from_pretrained(component_paths["vae_path"], torch_dtype=torch_dtype)
+        tokenizer = AutoTokenizer.from_pretrained(component_paths["tokenizer_path"])
+        tokenizer_2 = AutoTokenizer.from_pretrained(component_paths["tokenizer_2_path"])
+        text_encoder = CLIPTextModel.from_pretrained(
+            component_paths["text_encoder_path"],
+            torch_dtype=torch_dtype,
+        )
+        text_encoder_2 = CLIPTextModelWithProjection.from_pretrained(
+            component_paths["text_encoder_2_path"],
+            torch_dtype=torch_dtype,
+        )
+        return cls(
+            unet=unet,
+            scheduler=scheduler,
+            vae=vae,
+            tokenizer=tokenizer,
+            text_encoder=text_encoder,
+            tokenizer_2=tokenizer_2,
+            text_encoder_2=text_encoder_2,
+            default_edit_config=default_edit_config,
+            image_size=image_size,
+            device=device,
+            compute_dtype=compute_dtype,
+            use_attention_mask=use_attention_mask,
+            use_center_crop=use_center_crop,
+            use_safety_checker=use_safety_checker,
+            safety_checker_id=safety_checker_id,
+        )
+
+    @classmethod
+    def from_local_sdxl_turbo_weights(
+        cls,
+        component_paths: Dict[str, str],
+        **kwargs,
+    ) -> "ChordEditPipeline":
+        """Alias for from_local_sdxl_weights with an explicit SDXL-Turbo name."""
+
+        return cls.from_local_sdxl_weights(component_paths=component_paths, **kwargs)
 
     # ------------------------------------------------------------------ #
     # Public API
@@ -243,8 +398,10 @@ class ChordEditPipeline(DiffusionPipeline):
             latents=latents_tensor,
         )
 
-    def encode_prompt(self, prompts: Sequence[str]) -> torch.Tensor:
+    def encode_prompt(self, prompts: Sequence[str]) -> torch.Tensor | _PromptCondition:
         """Public helper mirroring diffusers pipelines for text encoding."""
+        if self._is_sdxl:
+            return self._encode_sdxl_text(prompts)
         return self._encode_text(prompts)
 
     # ------------------------------------------------------------------ #
@@ -341,6 +498,130 @@ class ChordEditPipeline(DiffusionPipeline):
             hidden = outputs[0]
         return hidden.to(device=self._device, dtype=self._compute_dtype)
 
+    def _encode_sdxl_text(self, prompts: Sequence[str]) -> _PromptCondition:
+        prompt_list = list(prompts)
+        hidden_states: List[torch.Tensor] = []
+        pooled_embeds: Optional[torch.Tensor] = None
+
+        tokenizers = (self.tokenizer, self.tokenizer_2)
+        text_encoders = (self.text_encoder, self.text_encoder_2)
+        for tokenizer, text_encoder in zip(tokenizers, text_encoders):
+            if tokenizer is None or text_encoder is None:
+                raise ValueError("SDXL prompt encoding requires tokenizer_2 and text_encoder_2.")
+
+            inputs = tokenizer(
+                prompt_list,
+                padding="max_length",
+                truncation=True,
+                max_length=tokenizer.model_max_length,
+                return_tensors="pt",
+            )
+            input_ids = inputs.input_ids.to(self._device)
+            attn_mask = inputs.attention_mask.to(self._device) if self._use_attention_mask else None
+            outputs = text_encoder(
+                input_ids=input_ids,
+                attention_mask=attn_mask,
+                output_hidden_states=True,
+                return_dict=True,
+            )
+            hidden = outputs.hidden_states[-2]
+            hidden_states.append(hidden.to(device=self._device, dtype=self._compute_dtype))
+            if text_encoder is self.text_encoder_2:
+                pooled = getattr(outputs, "text_embeds", None)
+                if pooled is None:
+                    pooled = outputs[0]
+                pooled_embeds = pooled.to(device=self._device, dtype=self._compute_dtype)
+
+        prompt_embeds = torch.cat(hidden_states, dim=-1)
+        time_ids = self._get_sdxl_time_ids(batch_size=len(prompt_list))
+        return _PromptCondition(
+            hidden_states=prompt_embeds,
+            pooled_embeds=pooled_embeds,
+            time_ids=time_ids,
+        )
+
+    def _get_sdxl_time_ids(self, batch_size: int) -> torch.Tensor:
+        size = (self.image_size, self.image_size)
+        crop = (0, 0)
+        add_time_ids = list(size + crop + size)
+        time_ids = torch.tensor([add_time_ids], device=self._device, dtype=self._compute_dtype)
+        return time_ids.repeat(batch_size, 1)
+
+    def _condition_hidden_states(self, cond: torch.Tensor | _PromptCondition) -> torch.Tensor:
+        if isinstance(cond, _PromptCondition):
+            return cond.hidden_states
+        return cond
+
+    def _cat_conditions(self, conditions: Sequence[torch.Tensor | _PromptCondition]) -> torch.Tensor | _PromptCondition:
+        if not conditions:
+            raise ValueError("Cannot concatenate an empty condition list.")
+        if not isinstance(conditions[0], _PromptCondition):
+            return torch.cat([self._condition_hidden_states(cond) for cond in conditions], dim=0)
+
+        prompt_conditions = [cond for cond in conditions if isinstance(cond, _PromptCondition)]
+        if len(prompt_conditions) != len(conditions):
+            raise TypeError("Cannot mix SDXL and non-SDXL prompt conditions.")
+
+        pooled = None
+        if all(cond.pooled_embeds is not None for cond in prompt_conditions):
+            pooled = torch.cat([cond.pooled_embeds for cond in prompt_conditions if cond.pooled_embeds is not None], dim=0)
+        time_ids = None
+        if all(cond.time_ids is not None for cond in prompt_conditions):
+            time_ids = torch.cat([cond.time_ids for cond in prompt_conditions if cond.time_ids is not None], dim=0)
+        return _PromptCondition(
+            hidden_states=torch.cat([cond.hidden_states for cond in prompt_conditions], dim=0),
+            pooled_embeds=pooled,
+            time_ids=time_ids,
+        )
+
+    def _repeat_condition(self, cond: torch.Tensor | _PromptCondition, repeats: int) -> torch.Tensor | _PromptCondition:
+        if not isinstance(cond, _PromptCondition):
+            repeat_dims = [repeats] + [1] * (cond.dim() - 1)
+            return cond.repeat(*repeat_dims)
+
+        hidden_repeat_dims = [repeats] + [1] * (cond.hidden_states.dim() - 1)
+        pooled = None
+        if cond.pooled_embeds is not None:
+            pooled_repeat_dims = [repeats] + [1] * (cond.pooled_embeds.dim() - 1)
+            pooled = cond.pooled_embeds.repeat(*pooled_repeat_dims)
+        time_ids = None
+        if cond.time_ids is not None:
+            time_repeat_dims = [repeats] + [1] * (cond.time_ids.dim() - 1)
+            time_ids = cond.time_ids.repeat(*time_repeat_dims)
+        return _PromptCondition(
+            hidden_states=cond.hidden_states.repeat(*hidden_repeat_dims),
+            pooled_embeds=pooled,
+            time_ids=time_ids,
+        )
+
+    def _predict_noise(
+        self,
+        sample: torch.Tensor,
+        timesteps: torch.Tensor,
+        cond: torch.Tensor | _PromptCondition,
+    ) -> torch.Tensor:
+        if isinstance(cond, _PromptCondition):
+            added_cond_kwargs = None
+            if cond.pooled_embeds is not None and cond.time_ids is not None:
+                added_cond_kwargs = {
+                    "text_embeds": cond.pooled_embeds,
+                    "time_ids": cond.time_ids,
+                }
+            return self.unet(
+                sample=sample,
+                timestep=timesteps,
+                encoder_hidden_states=cond.hidden_states,
+                added_cond_kwargs=added_cond_kwargs,
+                return_dict=False,
+            )[0]
+
+        return self.unet(
+            sample=sample,
+            timestep=timesteps,
+            encoder_hidden_states=cond,
+            return_dict=False,
+        )[0]
+
     def _tensor_to_pil(self, tensor: torch.Tensor) -> List[Image.Image]:
         tensor = tensor.detach().cpu().clamp(0.0, 1.0)
         to_pil = transforms.ToPILImage()
@@ -417,12 +698,11 @@ class ChordEditPipeline(DiffusionPipeline):
     def _pred_x0(self, x_anchor, timesteps, cond, noise):
         alpha_t, sigma_t = self._get_alpha_sigma(x_anchor, timesteps)
         z_t = alpha_t * x_anchor + sigma_t * noise
-        noise_pred = self.unet(
+        noise_pred = self._predict_noise(
             sample=z_t,
-            timestep=timesteps,
-            encoder_hidden_states=cond,
-            return_dict=False,
-        )[0]
+            timesteps=timesteps,
+            cond=cond,
+        )
         x0_pred = (z_t - sigma_t * noise_pred) / alpha_t
         return x0_pred
 
@@ -451,9 +731,8 @@ class ChordEditPipeline(DiffusionPipeline):
         samples = torch.stack([z_s, z_s, z_prev, z_prev], dim=1)
         samples = samples.reshape(num_noises * 4 * batch, *x_anchor.shape[1:])
 
-        conds = torch.cat([src_embed, edit_embed, src_embed, edit_embed], dim=0)
-        repeat_dims = [num_noises] + [1] * (conds.dim() - 1)
-        conds = conds.repeat(*repeat_dims)
+        conds = self._cat_conditions([src_embed, edit_embed, src_embed, edit_embed])
+        conds = self._repeat_condition(conds, num_noises)
 
         timesteps = torch.cat([t_idx_s, t_idx_s, t_idx_s0, t_idx_s0], dim=0)
         timesteps = timesteps.repeat(num_noises)
@@ -467,12 +746,11 @@ class ChordEditPipeline(DiffusionPipeline):
             dim=1,
         ).reshape(num_noises * 4 * batch, 1, 1, 1)
 
-        noise_pred = self.unet(
+        noise_pred = self._predict_noise(
             sample=samples,
-            timestep=timesteps,
-            encoder_hidden_states=conds,
-            return_dict=False,
-        )[0]
+            timesteps=timesteps,
+            cond=conds,
+        )
 
         x0_all = (samples - sigma_cat * noise_pred) / alpha_cat
         x0_all = x0_all.reshape(num_noises, 4, batch, *x_anchor.shape[1:])
@@ -511,9 +789,8 @@ class ChordEditPipeline(DiffusionPipeline):
         samples = torch.stack([z_s, z_s, z_prev, z_prev], dim=1)
         samples = samples.reshape(num_noises * 4 * batch, *x_anchor.shape[1:])
 
-        conds = torch.cat([src_embed, edit_embed, src_embed, edit_embed], dim=0)
-        repeat_dims = [num_noises] + [1] * (conds.dim() - 1)
-        conds = conds.repeat(*repeat_dims)
+        conds = self._cat_conditions([src_embed, edit_embed, src_embed, edit_embed])
+        conds = self._repeat_condition(conds, num_noises)
 
         timesteps = torch.cat([t_idx_s, t_idx_s, t_idx_s0, t_idx_s0], dim=0)
         timesteps = timesteps.repeat(num_noises)
@@ -527,12 +804,11 @@ class ChordEditPipeline(DiffusionPipeline):
             dim=1,
         ).reshape(num_noises * 4 * batch, 1, 1, 1)
 
-        noise_pred = self.unet(
+        noise_pred = self._predict_noise(
             sample=samples,
-            timestep=timesteps,
-            encoder_hidden_states=conds,
-            return_dict=False,
-        )[0]
+            timesteps=timesteps,
+            cond=conds,
+        )
 
         x0_all = (samples - sigma_cat * noise_pred) / alpha_cat
         x0_all = x0_all.reshape(num_noises, 4, batch, *x_anchor.shape[1:])
@@ -566,7 +842,7 @@ class ChordEditPipeline(DiffusionPipeline):
         x_curr = x_src
         print(params["t_start"], params["t_end"], params["t_delta"], params["n_steps"])
         for t_s in t_grid:
-            u_hat = self._u_estimate_sym(
+            u_hat = self._u_estimate(
                 x_curr,
                 src_embed,
                 edit_embed,

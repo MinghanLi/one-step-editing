@@ -212,8 +212,8 @@ def _validate_inputs(
         raise gr.Error("Please provide the source image prompt.")
     if not target_prompt or not target_prompt.strip():
         raise gr.Error("Please provide the target image prompt.")
-    if t_start <= t_end:
-        raise gr.Error("Invalid parameters: t_start must be greater than t_end.")
+    # if t_start <= t_end:
+    #     raise gr.Error("Invalid parameters: t_start must be greater than t_end.")
     if t_delta < 0:
         raise gr.Error("Invalid parameters: t_delta must be greater than or equal to 0.")
 
@@ -407,7 +407,7 @@ def main() -> None:
     LOGGER.info("Seed: %s | Default edit config: %s", seed, edit_config)
     LOGGER.info("Component paths: %s", component_paths)
 
-    pipeline = ChordEditPipeline.from_local_weights(
+    pipeline = ChordEditPipeline.from_local_sd_weights(
         component_paths=component_paths,
         default_edit_config=edit_config,
         device=None,

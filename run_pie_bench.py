@@ -18,16 +18,20 @@ from utils import first_param_point, load_yaml_config
 LOGGER = logging.getLogger("pie_bench")
 
 # model root + expected component subdirectories
-COMPONENT_SUBDIRS: Dict[str, str] = {
+SD_COMPONENT_SUBDIRS: Dict[str, str] = {
     "unet_path": "unet",
     "scheduler_path": "scheduler",
     "text_encoder_path": "text_encoder",
     "tokenizer_path": "tokenizer",
     "vae_path": "vae",
 }
+SDXL_COMPONENT_SUBDIRS: Dict[str, str] = {
+    "text_encoder_2_path": "text_encoder_2",
+    "tokenizer_2_path": "tokenizer_2",
+}
 DEFAULT_MODEL_ROOT = "/sd-turbo"
 DEFAULT_COMPONENT_PATHS: Dict[str, str] = {
-    key: str(Path(DEFAULT_MODEL_ROOT) / subdir) for key, subdir in COMPONENT_SUBDIRS.items()
+    key: str(Path(DEFAULT_MODEL_ROOT) / subdir) for key, subdir in SD_COMPONENT_SUBDIRS.items()
 }
 
 DEFAULT_EDIT_CONFIG = {
@@ -66,7 +70,13 @@ def parse_args() -> argparse.Namespace:
         "--model-root",
         type=str,
         default=DEFAULT_MODEL_ROOT,
-        help="Root folder containing unet/scheduler/text_encoder/tokenizer/vae subfolders.",
+        help="Root folder containing SD or SDXL component subfolders.",
+    )
+    parser.add_argument(
+        "--model-type",
+        choices=["auto", "sd", "sdxl"],
+        default="auto",
+        help="Model family. auto selects SDXL when tokenizer_2/text_encoder_2 folders are present.",
     )
     parser.add_argument("--device", type=str, default=None, help="Torch device override, e.g. cuda:0 or cpu.")
     parser.add_argument("--precision", choices=["fp32", "fp16", "bf16"], default=None, help="Computation precision.")
@@ -110,7 +120,12 @@ def parse_args() -> argparse.Namespace:
         default=False,
         help="Disable safety checker (default).",
     )
-    parser.add_argument("--image-size", type=int, default=512, help="Resolution used when feeding the VAE.")
+    parser.add_argument(
+        "--image-size",
+        type=int,
+        default=None,
+        help="Resolution used when feeding the VAE. Defaults to 512 for SD and 1024 for SDXL.",
+    )
     parser.add_argument("--max-samples", type=int, default=None, help="Only process the first N records.")
 
     parser.add_argument("--pie-root", type=str, default=None, help="Root directory of PIE-Bench data.")
@@ -185,21 +200,37 @@ def dtype_from_precision(value: Optional[str]) -> torch.dtype:
     return mapping[precision]
 
 
-def expand_component_paths(path_map: Dict[str, Optional[str]]) -> Dict[str, str]:
+def expand_component_paths(path_map: Dict[str, Optional[str]], model_type: str = "auto") -> Dict[str, str]:
     expanded: Dict[str, str] = {}
-    for key in COMPONENT_SUBDIRS:
+    for key in SD_COMPONENT_SUBDIRS:
         value = path_map.get(key)
         fallback = DEFAULT_COMPONENT_PATHS.get(key)
         final_value = value if value is not None else fallback
         if final_value is None:
             raise ValueError(f"Missing required path for '{key}'. Provide via config or CLI.")
         expanded[key] = str(Path(final_value).expanduser().resolve())
+
+    has_sdxl_paths = all(path_map.get(key) is not None for key in SDXL_COMPONENT_SUBDIRS)
+    if model_type == "sdxl" or (model_type == "auto" and has_sdxl_paths):
+        for key in SDXL_COMPONENT_SUBDIRS:
+            value = path_map.get(key)
+            if value is None:
+                raise ValueError(f"Missing required SDXL path for '{key}'. Provide via --model-root/config.")
+            expanded[key] = str(Path(value).expanduser().resolve())
     return expanded
 
 
-def paths_from_model_root(model_root: str | Path) -> Dict[str, str]:
+def paths_from_model_root(model_root: str | Path, model_type: str = "auto") -> Dict[str, str]:
     root = Path(model_root).expanduser().resolve()
-    return {key: str((root / subdir).resolve()) for key, subdir in COMPONENT_SUBDIRS.items()}
+    component_paths = {key: str((root / subdir).resolve()) for key, subdir in SD_COMPONENT_SUBDIRS.items()}
+    sdxl_paths = {key: (root / subdir).resolve() for key, subdir in SDXL_COMPONENT_SUBDIRS.items()}
+    if model_type == "sdxl" or (model_type == "auto" and all(path.exists() for path in sdxl_paths.values())):
+        component_paths.update({key: str(path) for key, path in sdxl_paths.items()})
+    return component_paths
+
+
+def pipeline_model_type(model_type: str) -> Optional[str]:
+    return None if model_type == "auto" else model_type
 
 
 def load_pipeline_config(path: Optional[str]) -> tuple[Dict[str, Any], int, Optional[str]]:
@@ -334,7 +365,10 @@ def main() -> None:
 
     edit_config, seed, precision = load_pipeline_config(args.config)
     edit_config, seed = apply_cli_overrides(args, edit_config, seed)
-    component_paths = expand_component_paths(paths_from_model_root(args.model_root))
+    component_paths = expand_component_paths(
+        paths_from_model_root(args.model_root, args.model_type),
+        args.model_type,
+    )
 
     precision_choice_raw = args.precision or precision or DEFAULT_PRECISION
     precision_choice = precision_choice_raw.lower()
@@ -369,6 +403,7 @@ def main() -> None:
 
     pipeline = ChordEditPipeline.from_local_weights(
         component_paths=component_paths,
+        model_type=pipeline_model_type(args.model_type),
         default_edit_config=edit_config,
         device=args.device,
         torch_dtype=torch_dtype,

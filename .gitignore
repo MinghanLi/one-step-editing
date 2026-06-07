@@ -1,2 +1,6 @@
 .DS_Store
 .vscode/
+
+# Checkpoints and ablation outputs
+checkpoints/
+ablation_outputs/

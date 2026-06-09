@@ -60,6 +60,19 @@ pie_bench
 For PIE-Bench data preparation and protocol details, please refer to:
 https://github.com/cure-lab/PnPInversion
 
+
+## 5. Reproduced ChordEdit results
+This averages the 700 PIE-Bench samples in PIE-Bench.
+
+| Method | Structure Dist. ↓ | PSNR ↑ | LPIPS ↓ | MSE ↓ | SSIM ↑ | CLIP Src. ↑ | CLIP Tgt. ↑ | CLIP Edit ↑ |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| chord default sd (paper)   | -      | 22.20   | 0.12825 | 0.00684   | -      | - | 25.58   | 22.96 |
+| chord default sd   | 0.0295 | 22.64   | 0.1185  | 0.0080 | 0.7675 | 25.4281 | 24.8226 | 22.1554 |
+| chord default sdxl | 0.0318 | 22.3838 | 0.1335  | 0.0079 | 0.7736 | 25.4281 | 25.8762 | 23.0175 |
+| chord sym sd       | 0.0151 | 26.1456 | 0.0747  | 0.0039 | 0.8148 | 25.4281 | 23.6089 | 20.9540 |
+| chord sym sdxl     | 0.0169 | 26.1842 | 0.0859  | 0.0034 | 0.8295 | 25.4281 | 24.7610 | 21.6957 |
+
+
 # Citation
 If you find our work helpful, please **star 🌟** this repo and **cite 📑** our paper. Thanks for your support!
 ```

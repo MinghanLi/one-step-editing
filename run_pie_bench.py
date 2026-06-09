@@ -435,7 +435,9 @@ def main() -> None:
         chord_edit_mode=args.chord_edit_mode,
     )
 
-    dir_name = "chord_" + args.chord_edit_mode + "_" + args.model_type
+    dir_name = "chord_" + args.chord_edit_mode + "_" + args.model_type + "_" + str(args.t_start) + "_" + str(args.t_end) + "_" + str(args.t_delta)
+    if args.no_cleanup:
+        dir_name += "_no_cleanup"
     output_dir = export_root / "output" / args.method_name / args.output_subdir / dir_name
     source_dir = export_root / "data" / args.source_subdir
     ensure_dir(output_dir)

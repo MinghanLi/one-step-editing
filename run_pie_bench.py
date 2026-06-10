@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 import argparse
 import json
 import logging
@@ -451,6 +452,7 @@ def main() -> None:
     processed = 0
     skipped = 0
 
+    tstart = time.time()
     for idx, record in enumerate(records, start=1):
         rel_output_path = output_dir / record.relative_path
         if rel_output_path.exists() and not args.overwrite:
@@ -499,12 +501,15 @@ def main() -> None:
         if args.log_every and processed % args.log_every == 0:
             LOGGER.info("Saved %d/%d samples (skipped=%d)", processed, len(records), skipped)
 
+    tend = time.time()
+    runtime_per_sample = (tend - tstart) / processed
     LOGGER.info(
         "Finished PIE export. Saved %d sample(s), skipped %d (existing/errors). Results: %s",
         processed,
         skipped,
         output_dir,
     )
+    LOGGER.info("Runtime per sample: %s seconds", runtime_per_sample)
 
 
 if __name__ == "__main__":

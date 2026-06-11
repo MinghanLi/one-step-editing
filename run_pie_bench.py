@@ -45,16 +45,6 @@ DEFAULT_EDIT_CONFIG = {
     "cleanup": True,
 }
 
-DEFAULT_EDIT_CONFIG_SYM = {
-    "noise_samples": 1,
-    "n_steps": 1,
-    "t_start": 0.40,
-    "t_end": 0.20,
-    "t_delta": 0.15,
-    "step_scale": 1.0,
-    "cleanup": True,
-}
-
 DEFAULT_SEED = 42
 DEFAULT_PRECISION = "fp32"
 
@@ -130,12 +120,6 @@ def parse_args() -> argparse.Namespace:
         action="store_false",
         default=False,
         help="Disable safety checker (default).",
-    )
-    parser.add_argument(
-        "--chord-edit-mode",
-        choices=["sym", "default"],
-        default="default",
-        help="Chord edit mode. default uses the default edit mode, sym uses a symmetric edit.",
     )
     parser.add_argument(
         "--image-size",
@@ -250,10 +234,8 @@ def pipeline_model_type(model_type: str) -> Optional[str]:
     return None if model_type == "auto" else model_type
 
 
-def load_pipeline_config(path: Optional[str], chord_edit_mode: str) -> tuple[Dict[str, Any], int, Optional[str]]:
+def load_pipeline_config(path: Optional[str]) -> tuple[Dict[str, Any], int, Optional[str]]:
     if path is None:
-        if chord_edit_mode == "sym":
-            return (dict(DEFAULT_EDIT_CONFIG_SYM), DEFAULT_SEED, DEFAULT_PRECISION)
         return (dict(DEFAULT_EDIT_CONFIG), DEFAULT_SEED, DEFAULT_PRECISION)
 
     cfg = load_yaml_config(path)
@@ -270,7 +252,7 @@ def load_pipeline_config(path: Optional[str], chord_edit_mode: str) -> tuple[Dic
 
     params_grid = editor_cfg.get("params_grid", {})
     edit_config = first_param_point(params_grid) if params_grid else dict(
-        DEFAULT_EDIT_CONFIG_SYM if chord_edit_mode == "sym" else DEFAULT_EDIT_CONFIG
+        DEFAULT_EDIT_CONFIG
     )
 
     return edit_config, seed_value, precision
@@ -384,7 +366,7 @@ def main() -> None:
         format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
     )
 
-    edit_config, seed, precision = load_pipeline_config(args.config, args.chord_edit_mode)
+    edit_config, seed, precision = load_pipeline_config(args.config)
     edit_config, seed = apply_cli_overrides(args, edit_config, seed)
     component_paths = expand_component_paths(
         paths_from_model_root(args.model_root, args.model_type),
@@ -433,10 +415,9 @@ def main() -> None:
         compute_dtype=compute_dtype,
         use_attention_mask=args.use_attention_mask,
         use_safety_checker=args.use_safety_checker,
-        chord_edit_mode=args.chord_edit_mode,
     )
 
-    dir_name = "chord_" + args.chord_edit_mode + "_" + args.model_type + "_" + str(args.t_start) + "_" + str(args.t_end) + "_" + str(args.t_delta)
+    dir_name = "chord_default_" + args.model_type + "_" + str(args.t_start) + "_" + str(args.t_end) + "_" + str(args.t_delta)
     if args.no_cleanup:
         dir_name += "_no_cleanup"
     output_dir = export_root / "output" / args.method_name / args.output_subdir / dir_name

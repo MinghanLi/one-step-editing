@@ -88,7 +88,6 @@ class ChordEditPipeline(DiffusionPipeline):
         use_center_crop: bool = True,
         use_safety_checker: bool = False,
         safety_checker_id: Optional[str] = DEFAULT_SAFETY_CHECKER_ID,
-        chord_edit_mode: str = "default",
     ) -> None:
         super().__init__()
         self.register_modules(
@@ -125,7 +124,6 @@ class ChordEditPipeline(DiffusionPipeline):
         self._safety_feature_extractor: Optional[CLIPImageProcessor] = None
         if self._use_safety_checker:
             self._init_safety_checker()
-        self._chord_edit_mode = chord_edit_mode
 
     def _set_compute_precision(self) -> None:
         modules = (self.unet, self.vae, self.text_encoder, self.text_encoder_2)
@@ -167,7 +165,6 @@ class ChordEditPipeline(DiffusionPipeline):
         use_attention_mask: bool = False,
         use_safety_checker: bool = False,
         safety_checker_id: Optional[str] = DEFAULT_SAFETY_CHECKER_ID,
-        chord_edit_mode: str = "default",
     ) -> "ChordEditPipeline":
         """Instantiate SD or SDXL weights, inferring the format when possible.
 
@@ -186,7 +183,6 @@ class ChordEditPipeline(DiffusionPipeline):
             "use_attention_mask": use_attention_mask,
             "use_safety_checker": use_safety_checker,
             "safety_checker_id": safety_checker_id,
-            "chord_edit_mode": chord_edit_mode,
         }
         if resolved_model_type == "sdxl":
             return cls.from_local_sdxl_weights(
@@ -230,7 +226,6 @@ class ChordEditPipeline(DiffusionPipeline):
         use_attention_mask: bool = False,
         use_safety_checker: bool = False,
         safety_checker_id: Optional[str] = DEFAULT_SAFETY_CHECKER_ID,
-        chord_edit_mode: str = "default",
     ) -> "ChordEditPipeline":
         """Instantiate the pipeline from local SD/SD-Turbo component checkpoints."""
 
@@ -259,7 +254,6 @@ class ChordEditPipeline(DiffusionPipeline):
             use_center_crop=use_center_crop,
             use_safety_checker=use_safety_checker,
             safety_checker_id=safety_checker_id,
-            chord_edit_mode=chord_edit_mode,
         )
 
     @classmethod
@@ -276,7 +270,6 @@ class ChordEditPipeline(DiffusionPipeline):
         use_attention_mask: bool = False,
         use_safety_checker: bool = False,
         safety_checker_id: Optional[str] = DEFAULT_SAFETY_CHECKER_ID,
-        chord_edit_mode: str = "default",
     ) -> "ChordEditPipeline":
         """Instantiate the pipeline from local SDXL-Turbo component checkpoints.
 
@@ -330,7 +323,6 @@ class ChordEditPipeline(DiffusionPipeline):
             use_center_crop=use_center_crop,
             use_safety_checker=use_safety_checker,
             safety_checker_id=safety_checker_id,
-            chord_edit_mode=chord_edit_mode,
         )
 
     @classmethod
@@ -713,14 +705,8 @@ class ChordEditPipeline(DiffusionPipeline):
         )
         x0_pred = (z_t - sigma_t * noise_pred) / alpha_t
         return x0_pred
-    
-    def _u_estimate(self, x_anchor, src_embed, edit_embed, noise, t_s: float, delta: float):
-        if self._chord_edit_mode == "sym":
-            print("Using symmetric edit mode ...")
-            return self._u_estimate_sym(x_anchor, src_embed, edit_embed, noise, t_s, delta)
-        return self._u_estimate_default(x_anchor, src_embed, edit_embed, noise, t_s, delta)
 
-    def _u_estimate_default(self, x_anchor, src_embed, edit_embed, noise, t_s: float, delta: float):
+    def _u_estimate(self, x_anchor, src_embed, edit_embed, noise, t_s: float, delta: float):
         batch, device = x_anchor.shape[0], x_anchor.device
         t_idx_s = self._time_to_index(batch, t_s, device=device)
         t_idx_s0 = self._time_to_index(batch, max(0.0, t_s - delta), device=device)
@@ -777,61 +763,6 @@ class ChordEditPipeline(DiffusionPipeline):
         if denom <= 1e-6:
             return dv_s
         return (delta * dv_s + t_s * dv_s0) / denom
-
-    def _u_estimate_sym(self, x_anchor, src_embed, edit_embed, noise, t_s: float, delta: float):
-        batch, device = x_anchor.shape[0], x_anchor.device
-        t_idx_s = self._time_to_index(batch, t_s, device=device)
-        t_idx_s0 = self._time_to_index(batch, max(0.0, 1 - t_s), device=device)
-
-        noises = noise if isinstance(noise, (list, tuple)) else [noise]
-
-        alpha_s, sigma_s = self._get_alpha_sigma(x_anchor, t_idx_s)
-        alpha_prev, sigma_prev = self._get_alpha_sigma(x_anchor, t_idx_s0)
-
-        num_noises = len(noises)
-        noise_stack = torch.stack(noises, dim=0)
-
-        x_anchor_b = x_anchor.unsqueeze(0).expand(num_noises, -1, -1, -1, -1)
-        alpha_s_b = alpha_s.unsqueeze(0).expand(num_noises, -1, -1, -1, -1)
-        alpha_prev_b = alpha_prev.unsqueeze(0).expand(num_noises, -1, -1, -1, -1)
-        sigma_s_b = sigma_s.unsqueeze(0).expand(num_noises, -1, -1, -1, -1)
-        sigma_prev_b = sigma_prev.unsqueeze(0).expand(num_noises, -1, -1, -1, -1)
-
-        z_s = alpha_s_b * x_anchor_b + sigma_s_b * noise_stack
-        z_prev = alpha_prev_b * x_anchor_b + sigma_prev_b * noise_stack
-
-        samples = torch.stack([z_s, z_s, z_prev, z_prev], dim=1)
-        samples = samples.reshape(num_noises * 4 * batch, *x_anchor.shape[1:])
-
-        conds = self._cat_conditions([src_embed, edit_embed, src_embed, edit_embed])
-        conds = self._repeat_condition(conds, num_noises)
-
-        timesteps = torch.cat([t_idx_s, t_idx_s, t_idx_s0, t_idx_s0], dim=0)
-        timesteps = timesteps.repeat(num_noises)
-
-        alpha_cat = torch.stack(
-            [alpha_s_b, alpha_s_b, alpha_prev_b, alpha_prev_b],
-            dim=1,
-        ).reshape(num_noises * 4 * batch, 1, 1, 1)
-        sigma_cat = torch.stack(
-            [sigma_s_b, sigma_s_b, sigma_prev_b, sigma_prev_b],
-            dim=1,
-        ).reshape(num_noises * 4 * batch, 1, 1, 1)
-
-        noise_pred = self._predict_noise(
-            sample=samples,
-            timesteps=timesteps,
-            cond=conds,
-        )
-
-        x0_all = (samples - sigma_cat * noise_pred) / alpha_cat
-        x0_all = x0_all.reshape(num_noises, 4, batch, *x_anchor.shape[1:])
-        x_src_p_s, x_tar_p_s, x_src_p_s0, x_tar_p_s0 = x0_all.unbind(dim=1)
-
-        dv_s = (x_tar_p_s - x_src_p_s).sum(dim=0) / float(num_noises)
-        dv_s0 = (x_tar_p_s0 - x_src_p_s0).sum(dim=0) / float(num_noises)
-
-        return t_s * dv_s + (1 - t_s) * dv_s0
 
 
     def _run_edit(

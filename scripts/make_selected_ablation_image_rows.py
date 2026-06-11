@@ -17,7 +17,7 @@ import pandas as pd
 from PIL import Image, ImageDraw, ImageFont
 
 
-DEFAULT_ROOT = Path("datasets/PIE-Bench_v1/output/ChordEdit/annotation_images")
+DEFAULT_ROOT = Path("datasets/PIE-Bench_v1/output/ChordEdit/evaluation_results")
 DEFAULT_PIE_ROOT = Path("datasets/PIE-Bench_v1")
 DEFAULT_SELECTED_CSV = DEFAULT_ROOT / "top5_selected_ablation_samples.csv"
 DEFAULT_OUT_DIR = DEFAULT_ROOT / "selected_ablation_image_rows"
@@ -70,7 +70,7 @@ COLUMNS = (
     ColumnSpec(
         name="tstart0.9_tend0.3_delta0.15_cleanup",
         directory="chord_default_sd",
-        metric_prefix="0_chord_default_sd_delta1.5",
+        metric_prefix="0_chord_default_sd_delta0.15",
     ),
     ColumnSpec(
         name="tstart0.9_tend0.3_delta0.15_no_cleanup",
@@ -82,28 +82,28 @@ COLUMNS = (
 DELTA_SWEEP_COLUMNS = (
     ColumnSpec(
         name="delta0.05",
-        directory="chord_default_auto_None_None_0.5",
-        metric_prefix="0_chord_default_sd_delta0.5",
+        directory="chord_default_auto_None_None_0.05",
+        metric_prefix="0_chord_default_sd_delta0.05",
     ),
     ColumnSpec(
         name="delta0.10",
-        directory="chord_default_auto_None_None_1.0",
-        metric_prefix="0_chord_default_sd_delta1.0",
+        directory="chord_default_auto_None_None_0.1",
+        metric_prefix="0_chord_default_sd_delta0.1",
     ),
     ColumnSpec(
         name="delta0.15",
         directory="chord_default_sd",
-        metric_prefix="0_chord_default_sd_delta1.5",
+        metric_prefix="0_chord_default_sd_delta0.15",
     ),
     ColumnSpec(
         name="delta0.20",
-        directory="chord_default_auto_None_None_2.0",
-        metric_prefix="0_chord_default_sd_delta2.0",
+        directory="chord_default_auto_None_None_0.2",
+        metric_prefix="0_chord_default_sd_delta0.2",
     ),
     ColumnSpec(
         name="delta0.25",
-        directory="chord_default_auto_None_None_2.5",
-        metric_prefix="0_chord_default_sd_delta2.5",
+        directory="chord_default_auto_None_None_0.25",
+        metric_prefix="0_chord_default_sd_delta0.25",
     ),
 )
 
@@ -126,7 +126,7 @@ TSTART_SWEEP_COLUMNS = (
     ColumnSpec(
         name="t0.9",
         directory="chord_default_sd",
-        metric_prefix="0_chord_default_sd_delta1.5",
+        metric_prefix="0_chord_default_sd_delta0.15",
     ),
     ColumnSpec(
         name="t1.0",
@@ -149,7 +149,7 @@ TEND_SWEEP_COLUMNS = (
     ColumnSpec(
         name="tend0.3",
         directory="chord_default_sd",
-        metric_prefix="0_chord_default_sd_delta1.5",
+        metric_prefix="0_chord_default_sd_delta0.15",
     ),
     ColumnSpec(
         name="tend0.4",
@@ -181,7 +181,7 @@ METHOD_SETS = {
             ColumnSpec(
                 name="default_t0.9_delta0.15_tend0.3",
                 directory="chord_default_sd",
-                metric_prefix="0_chord_default_sd_delta1.5",
+                metric_prefix="0_chord_default_sd_delta0.15",
             ),
             ColumnSpec(
                 name="t0.75_delta0_tend0.3",

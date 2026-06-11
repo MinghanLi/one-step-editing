@@ -11,14 +11,12 @@ import pandas as pd
 
 
 DEFAULT_ROOT = Path("datasets/PIE-Bench_v1/output/ChordEdit/annotation_images")
+DEFAULT_EVALUATION_RESULTS_ROOT = DEFAULT_ROOT.parent / "evaluation_results"
 DEFAULT_EVALUATION_CSVS = (
     DEFAULT_ROOT / "evaluation_result_ablation.csv",
-    DEFAULT_ROOT / "evaluation_result_ablation_round2.csv",
-    DEFAULT_ROOT / "evaluation_result_ablation_round3.csv",
 )
-DEFAULT_SAMPLE_META = DEFAULT_ROOT / "chordedit_pie700_metrics.csv"
-DEFAULT_OUT_CSV = DEFAULT_ROOT / "top5_selected_ablation_samples.csv"
-DEFAULT_OUT_MD = DEFAULT_ROOT / "top5_selected_ablation_samples.md"
+DEFAULT_OUT_CSV = DEFAULT_EVALUATION_RESULTS_ROOT / "top5_selected_ablation_samples.csv"
+DEFAULT_OUT_MD = DEFAULT_EVALUATION_RESULTS_ROOT / "top5_selected_ablation_samples.md"
 
 METRIC_COLUMNS = {
     "PSNR": "psnr_unedit_part",
@@ -68,7 +66,6 @@ def parse_args() -> argparse.Namespace:
         )
     )
     parser.add_argument("--evaluation-csvs", type=Path, nargs="+", default=list(DEFAULT_EVALUATION_CSVS))
-    parser.add_argument("--sample-meta", type=Path, default=DEFAULT_SAMPLE_META)
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument("--out-csv", type=Path, default=DEFAULT_OUT_CSV)
     parser.add_argument("--out-md", type=Path, default=DEFAULT_OUT_MD)

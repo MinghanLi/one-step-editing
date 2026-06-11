@@ -1,45 +1,36 @@
-# CUDA_VISIBLE_DEVICES=6 python run_pie_bench.py --model-root checkpoints/sd-turbo --pie-root datasets/PIE-Bench_v1/ --t-delta 0.0
+#!/usr/bin/env bash
+set -euo pipefail
 
-CUDA_VISIBLE_DEVICES=6 python run_pie_bench.py --model-root checkpoints/sd-turbo --pie-root datasets/PIE-Bench_v1/ --t-delta 0.05
+MODEL_ROOT="checkpoints/sd-turbo"
+PIE_ROOT="datasets/PIE-Bench_v1/"
 
-CUDA_VISIBLE_DEVICES=6 python run_pie_bench.py --model-root checkpoints/sd-turbo --pie-root datasets/PIE-Bench_v1/ --t-delta 0.10
+run_pie_bench() {
+  python run_pie_bench.py \
+    --model-root "${MODEL_ROOT}" \
+    --pie-root "${PIE_ROOT}" \
+    "$@"
+}
 
-CUDA_VISIBLE_DEVICES=6 python run_pie_bench.py --model-root checkpoints/sd-turbo --pie-root datasets/PIE-Bench_v1/ --t-delta 0.20
+run_pie_bench
 
-CUDA_VISIBLE_DEVICES=6 python run_pie_bench.py --model-root checkpoints/sd-turbo --pie-root datasets/PIE-Bench_v1/ --t-delta 0.25
+for t_delta in 0.0 0.05 0.10 0.20 0.25; do
+  run_pie_bench --t-delta "${t_delta}"
+done
 
-# CUDA_VISIBLE_DEVICES=6 python run_pie_bench.py --model-root checkpoints/sd-turbo --pie-root datasets/PIE-Bench_v1/ --t-start 0.6 
+for t_start in 0.6 0.7 0.8 1.0; do
+  run_pie_bench --t-start "${t_start}"
+done
 
-# CUDA_VISIBLE_DEVICES=6 python run_pie_bench.py --model-root checkpoints/sd-turbo --pie-root datasets/PIE-Bench_v1/ --t-start 1.0 
+for t_end in 0.1 0.2 0.4 0.5; do
+  run_pie_bench --t-end "${t_end}"
+done
 
-# CUDA_VISIBLE_DEVICES=6 python run_pie_bench.py --model-root checkpoints/sd-turbo --pie-root datasets/PIE-Bench_v1/ --t-end 0.2
+for t_start in 0.6 0.7 0.8 0.9 1.0; do
+  run_pie_bench --t-delta 0.0 --t-start "${t_start}"
+done
 
-# CUDA_VISIBLE_DEVICES=6 python run_pie_bench.py --model-root checkpoints/sd-turbo --pie-root datasets/PIE-Bench_v1/ --t-end 0.1
+for t_start in 0.6 0.7 0.8 0.9 1.0; do
+  run_pie_bench --t-delta 0.0 --t-start "${t_start}" --no-cleanup
+done
 
-# CUDA_VISIBLE_DEVICES=6 python run_pie_bench.py --model-root checkpoints/sd-turbo --pie-root datasets/PIE-Bench_v1/ --t-end 0.4
-
-# CUDA_VISIBLE_DEVICES=6 python run_pie_bench.py --model-root checkpoints/sd-turbo --pie-root datasets/PIE-Bench_v1/ --t-end 0.5
-
-
-# naive param ablation
-
-# CUDA_VISIBLE_DEVICES=5 python run_pie_bench.py --model-root checkpoints/sd-turbo --pie-root datasets/PIE-Bench_v1/ --t-delta 0.0 --t-start 0.6
-
-# CUDA_VISIBLE_DEVICES=5 python run_pie_bench.py --model-root checkpoints/sd-turbo --pie-root datasets/PIE-Bench_v1/ --t-delta 0.0 --t-start 0.7
-
-# CUDA_VISIBLE_DEVICES=5 python run_pie_bench.py --model-root checkpoints/sd-turbo --pie-root datasets/PIE-Bench_v1/ --t-delta 0.0 --t-start 0.75
-
-
-# CUDA_VISIBLE_DEVICES=5 python run_pie_bench.py --model-root checkpoints/sd-turbo --pie-root datasets/PIE-Bench_v1/ --t-delta 0.0 --t-start 0.8
-
-# CUDA_VISIBLE_DEVICES=5 python run_pie_bench.py --model-root checkpoints/sd-turbo --pie-root datasets/PIE-Bench_v1/ --t-delta 0.0 --t-start 1.0
-
-# CUDA_VISIBLE_DEVICES=5 python run_pie_bench.py --model-root checkpoints/sd-turbo --pie-root datasets/PIE-Bench_v1/ --t-delta 0.0 --t-start 0.6 --no-cleanup
-
-# CUDA_VISIBLE_DEVICES=5 python run_pie_bench.py --model-root checkpoints/sd-turbo --pie-root datasets/PIE-Bench_v1/ --t-delta 0.0 --t-start 0.7 --no-cleanup
-
-# CUDA_VISIBLE_DEVICES=5 python run_pie_bench.py --model-root checkpoints/sd-turbo --pie-root datasets/PIE-Bench_v1/ --t-delta 0.0 --t-start 0.8 --no-cleanup
-
-# CUDA_VISIBLE_DEVICES=5 python run_pie_bench.py --model-root checkpoints/sd-turbo --pie-root datasets/PIE-Bench_v1/ --t-delta 0.0 --t-start 0.9 --no-cleanup
-
-# CUDA_VISIBLE_DEVICES=5 python run_pie_bench.py --model-root checkpoints/sd-turbo --pie-root datasets/PIE-Bench_v1/ --t-delta 0.0 --t-start 1.0 --no-cleanup
+run_pie_bench --t-delta 0.0 --t-start 0.75

@@ -12,19 +12,12 @@ from matplotlib.ticker import FormatStrFormatter
 import pandas as pd
 
 
-DEFAULT_METHOD = "chord default sd tstart0.9 tend0.3 delta1.5 cleanup"
+DEFAULT_METHOD = "chord default sd tstart0.9 tend0.3 delta0.15 cleanup"
+DEFAULT_ROOT = "datasets/PIE-Bench_v1/output/ChordEdit/annotation_images/"
 DEFAULT_INPUTS = (
     Path(
-        "datasets/PIE-Bench_v1/output/ChordEdit/annotation_images/"
+        DEFAULT_ROOT
         "performance_comparison_ablation.csv"
-    ),
-    Path(
-        "datasets/PIE-Bench_v1/output/ChordEdit/annotation_images/"
-        "performance_comparison_ablation_round2.csv"
-    ),
-    Path(
-        "datasets/PIE-Bench_v1/output/ChordEdit/annotation_images/"
-        "performance_comparison_ablation_round3.csv"
     ),
 )
 DEFAULTS = {
@@ -33,7 +26,7 @@ DEFAULTS = {
     "t_delta": 0.15,
     "no_cleanup": False,
 }
-DELTA_NAME_SCALE = 10.0
+OLD_DELTA_NAME_SCALE = 10.0
 METRICS = [
     "Structure Dist.",
     "PSNR",
@@ -97,7 +90,7 @@ def parse_args() -> argparse.Namespace:
         "--merged-csv",
         type=Path,
         default=Path(
-            "datasets/PIE-Bench_v1/output/ChordEdit/annotation_images/"
+            DEFAULT_ROOT
             "performance_comparison_ablation_merged.csv"
         ),
     )
@@ -121,10 +114,12 @@ def method_params(method: str) -> dict[str, float | bool]:
     raw_delta = method_value(method, "delta")
     t_start = method_value(method, "tstart")
     t_end = method_value(method, "tend")
+    if raw_delta is not None and raw_delta > 1.0:
+        raw_delta = raw_delta / OLD_DELTA_NAME_SCALE
     return {
         "t_start": t_start if t_start is not None else DEFAULTS["t_start"],
         "t_end": t_end if t_end is not None else DEFAULTS["t_end"],
-        "t_delta": (raw_delta / DELTA_NAME_SCALE) if raw_delta is not None else DEFAULTS["t_delta"],
+        "t_delta": raw_delta if raw_delta is not None else DEFAULTS["t_delta"],
         "cleanup": "no cleanup" not in method,
     }
 
@@ -133,12 +128,11 @@ def normalize_method_name(method: str) -> str:
     params = method_params(method)
     base = method_base(method)
     cleanup = "cleanup" if params["cleanup"] else "no cleanup"
-    delta_name = params["t_delta"] * DELTA_NAME_SCALE
     return (
         f"{base} "
         f"tstart{format_param(params['t_start'])} "
         f"tend{format_param(params['t_end'])} "
-        f"delta{format_param(delta_name)} "
+        f"delta{format_param(params['t_delta'])} "
         f"{cleanup}"
     )
 
@@ -245,7 +239,7 @@ def method_short_label(method: str) -> str:
         [
             f"{param_display_label('t_start')}={format_param(params['t_start'])}",
             f"{param_display_label('t_end')}={format_param(params['t_end'])}",
-            f"{param_display_label('t_delta')}={format_param(params['t_delta'] * DELTA_NAME_SCALE)}",
+            f"{param_display_label('t_delta')}={format_param(params['t_delta'])}",
         ]
     )
     if not params["cleanup"]:
@@ -860,9 +854,9 @@ def write_summary(df: pd.DataFrame, out_path: Path) -> None:
             "- Higher `t_end` pushes edit strength at the cost of preservation: "
             f"`tend0.5` changes {metric_display_label('CLIP Edit')} by {delta('chord default sd tend0.5', 'CLIP Edit'):+.4f} "
             f"and PSNR by {delta('chord default sd tend0.5', 'PSNR'):+.4f} versus default.",
-            "- `delta0.5` is the best single-parameter preservation point among the delta sweep, "
-            f"with PSNR {get_row('chord default sd delta0.5')['PSNR']:.4f} and "
-            f"{metric_display_label('CLIP Edit')} {get_row('chord default sd delta0.5')['CLIP Edit']:.4f}.",
+            "- `delta0.25` is the best single-parameter preservation point among the delta sweep, "
+            f"with PSNR {get_row('chord default sd delta0.25')['PSNR']:.4f} and "
+            f"{metric_display_label('CLIP Edit')} {get_row('chord default sd delta0.25')['CLIP Edit']:.4f}.",
             "- The `delta0.0, t_start=0.6, no cleanup` run is the preservation extreme, "
             f"but it gives up {abs(delta('chord default sd delta0.0 tstart0.6 no cleanup', 'CLIP Edit')):.4f} "
             f"{metric_display_label('CLIP Edit')} points versus default.",
@@ -876,6 +870,7 @@ def main() -> None:
     args = parse_args()
     df, csv_path = read_or_merge(args)
     out_dir = args.out_dir or csv_path.parent
+    out_dir = out_dir.parent / "evaluation_results"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     default_matches = df[df["Method"] == DEFAULT_METHOD]

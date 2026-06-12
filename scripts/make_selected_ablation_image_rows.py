@@ -17,18 +17,17 @@ import pandas as pd
 from PIL import Image, ImageDraw, ImageFont
 
 
-DEFAULT_ROOT = Path("datasets/PIE-Bench_v1/output/ChordEdit/evaluation_results")
+DEFAULT_ROOT = Path("datasets/PIE-Bench_v1/output/ChordEdit/annotation_images")
+DEFAULT_EVALUATION_RESULTS_ROOT = DEFAULT_ROOT.parent / "evaluation_results"
 DEFAULT_PIE_ROOT = Path("datasets/PIE-Bench_v1")
-DEFAULT_SELECTED_CSV = DEFAULT_ROOT / "top5_selected_ablation_samples.csv"
-DEFAULT_OUT_DIR = DEFAULT_ROOT / "selected_ablation_image_rows"
-DEFAULT_VS_T075_OUT_DIR = DEFAULT_ROOT / "selected_default_vs_t075_image_rows"
-DEFAULT_ANCHOR_DELTA_SWEEP_OUT_DIR = DEFAULT_ROOT / "anchor_delta_sweep_image_rows"
-DEFAULT_ANCHOR_TSTART_SWEEP_OUT_DIR = DEFAULT_ROOT / "anchor_tstart_sweep_image_rows"
-DEFAULT_ANCHOR_TEND_SWEEP_OUT_DIR = DEFAULT_ROOT / "anchor_tend_sweep_image_rows"
+DEFAULT_SELECTED_CSV = DEFAULT_EVALUATION_RESULTS_ROOT / "top5_selected_ablation_samples.csv"
+DEFAULT_OUT_DIR = DEFAULT_EVALUATION_RESULTS_ROOT / "selected_ablation_image_rows"
+DEFAULT_VS_T075_OUT_DIR = DEFAULT_EVALUATION_RESULTS_ROOT / "selected_default_vs_t075_image_rows"
+DEFAULT_ANCHOR_DELTA_SWEEP_OUT_DIR = DEFAULT_EVALUATION_RESULTS_ROOT / "anchor_delta_sweep_image_rows"
+DEFAULT_ANCHOR_TSTART_SWEEP_OUT_DIR = DEFAULT_EVALUATION_RESULTS_ROOT / "anchor_tstart_sweep_image_rows"
+DEFAULT_ANCHOR_TEND_SWEEP_OUT_DIR = DEFAULT_EVALUATION_RESULTS_ROOT / "anchor_tend_sweep_image_rows"
 DEFAULT_EVALUATION_CSVS = (
     DEFAULT_ROOT / "evaluation_result_ablation.csv",
-    DEFAULT_ROOT / "evaluation_result_ablation_round2.csv",
-    DEFAULT_ROOT / "evaluation_result_ablation_round3.csv",
 )
 
 HEADER_LABELS = (
@@ -69,13 +68,13 @@ COLUMNS = (
     ),
     ColumnSpec(
         name="tstart0.9_tend0.3_delta0.15_cleanup",
-        directory="chord_default_sd",
+        directory="chord_default_auto_None_None_None",
         metric_prefix="0_chord_default_sd_delta0.15",
     ),
     ColumnSpec(
         name="tstart0.9_tend0.3_delta0.15_no_cleanup",
         directory="chord_default_sd_None_None_None_no_cleanup",
-        metric_prefix="0_chord_default_sd_delta1.5_no_cleanup",
+        metric_prefix="0_chord_default_sd_delta0.15_no_cleanup",
     ),
 )
 
@@ -92,7 +91,7 @@ DELTA_SWEEP_COLUMNS = (
     ),
     ColumnSpec(
         name="delta0.15",
-        directory="chord_default_sd",
+        directory="chord_default_auto_None_None_None",
         metric_prefix="0_chord_default_sd_delta0.15",
     ),
     ColumnSpec(
@@ -125,8 +124,8 @@ TSTART_SWEEP_COLUMNS = (
     ),
     ColumnSpec(
         name="t0.9",
-        directory="chord_default_sd",
-        metric_prefix="0_chord_default_sd_delta0.15",
+        directory="chord_default_auto_None_None_None",
+        metric_prefix="0_chord_default_sd_tstart0.9",
     ),
     ColumnSpec(
         name="t1.0",
@@ -148,8 +147,8 @@ TEND_SWEEP_COLUMNS = (
     ),
     ColumnSpec(
         name="tend0.3",
-        directory="chord_default_sd",
-        metric_prefix="0_chord_default_sd_delta0.15",
+        directory="chord_default_auto_None_None_None",
+        metric_prefix="0_chord_default_sd_tend0.3",
     ),
     ColumnSpec(
         name="tend0.4",
@@ -180,7 +179,7 @@ METHOD_SETS = {
         "columns": (
             ColumnSpec(
                 name="default_t0.9_delta0.15_tend0.3",
-                directory="chord_default_sd",
+                directory="chord_default_auto_None_None_None",
                 metric_prefix="0_chord_default_sd_delta0.15",
             ),
             ColumnSpec(
@@ -271,6 +270,12 @@ def selected_samples(
         raise FileNotFoundError(path)
     samples = pd.read_csv(path, dtype={"file_id": str})
     samples = samples[["file_id", "image_path"]].drop_duplicates("file_id", keep="first")
+    if mapping:
+        mapped_paths = samples["file_id"].map(lambda file_id: mapping.get(file_id, {}).get("image_path"))
+        samples["image_path"] = samples["image_path"].fillna(mapped_paths)
+    missing_paths = samples[samples["image_path"].isna()]["file_id"].tolist()
+    if missing_paths:
+        raise ValueError(f"Missing image_path for sample IDs: {', '.join(missing_paths)}")
     return samples.sort_values("file_id").reset_index(drop=True)
 
 

@@ -15,6 +15,7 @@ DEFAULT_EVALUATION_RESULTS_ROOT = DEFAULT_ROOT.parent / "evaluation_results"
 DEFAULT_EVALUATION_CSVS = (
     DEFAULT_ROOT / "evaluation_result_ablation.csv",
 )
+DEFAULT_SAMPLE_META = Path("scripts/anchor_samples.csv")
 DEFAULT_OUT_CSV = DEFAULT_EVALUATION_RESULTS_ROOT / "top5_selected_ablation_samples.csv"
 DEFAULT_OUT_MD = DEFAULT_EVALUATION_RESULTS_ROOT / "top5_selected_ablation_samples.md"
 
@@ -41,11 +42,11 @@ class Experiment:
 EXPERIMENTS = (
     Experiment(
         label="tstart0.9 tend0.3 delta0.15 w/ cleanup",
-        prefix="0_chord_default_sd_delta1.5",
+        prefix="0_chord_default_sd_delta0.15",
     ),
     Experiment(
         label="tstart0.9 tend0.3 delta0.15 w/o cleanup",
-        prefix="0_chord_default_sd_delta1.5_no_cleanup",
+        prefix="0_chord_default_sd_delta0.15_no_cleanup",
     ),
     Experiment(
         label="tstart0.9 tend0.3 delta0 w/ cleanup",
@@ -66,6 +67,7 @@ def parse_args() -> argparse.Namespace:
         )
     )
     parser.add_argument("--evaluation-csvs", type=Path, nargs="+", default=list(DEFAULT_EVALUATION_CSVS))
+    parser.add_argument("--sample-meta", type=Path, default=DEFAULT_SAMPLE_META)
     parser.add_argument("--top-k", type=int, default=5)
     parser.add_argument("--out-csv", type=Path, default=DEFAULT_OUT_CSV)
     parser.add_argument("--out-md", type=Path, default=DEFAULT_OUT_MD)

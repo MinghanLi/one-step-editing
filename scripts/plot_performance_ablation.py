@@ -16,7 +16,7 @@ DEFAULT_METHOD = "chord default sd tstart0.9 tend0.3 delta0.15 cleanup"
 DEFAULT_ROOT = "datasets/PIE-Bench_v1/output/ChordEdit/annotation_images/"
 DEFAULT_INPUTS = (
     Path(
-        DEFAULT_ROOT
+        DEFAULT_ROOT,
         "performance_comparison_ablation.csv"
     ),
 )
@@ -90,7 +90,7 @@ def parse_args() -> argparse.Namespace:
         "--merged-csv",
         type=Path,
         default=Path(
-            DEFAULT_ROOT
+            DEFAULT_ROOT,
             "performance_comparison_ablation_merged.csv"
         ),
     )

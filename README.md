@@ -4,7 +4,7 @@
   <div class="authors">
     <span>Minghan Li, Jeremy Moebel, and Mengyu Wang</span><br>
     <span style="color: #666; font-size: 0.9em;">Harvard AI and Robotics Lab, Harvard University</span><br>
-    <span style="color: #777; font-size: 0.85em;">Reproduction and analysis of the original ChordEdit paper ([CVPR 2026 Oral]) by Liangsi Lu, Xuhang Chen, Minzhe Guo, Shichu Li, Jingchao Wang, and Yang Shi.</span>
+    <span style="color: #777; font-size: 0.85em;">Reproduction and analysis of the original ChordEdit paper ([CVPR 2026 Oral]tmux) by Liangsi Lu, Xuhang Chen, Minzhe Guo, Shichu Li, Jingchao Wang, and Yang Shi.</span>
   </div>
 
   <a href="https://chordedit.github.io"><img src="https://img.shields.io/badge/Project-Page-2b7de9"></a>
@@ -41,6 +41,8 @@ To reproduce the ablation results:
 4. Plot and merge the ablation results:
    ```bash
    python scripts/plot_performance_ablation.py
+   python scripts/find_top_ablation_samples.py
+   python scripts/make_selected_ablation_image_rows.py
    ```
 
 
